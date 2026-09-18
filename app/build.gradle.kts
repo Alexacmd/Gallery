@@ -36,7 +36,8 @@ android {
 }
 
 dependencies {
-    implementation("io.coil-kt.coil3:coil-compose:3.3.0")
+    implementation(libs.coil.compose)
+    implementation(libs.compose.material.icons.extended)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)

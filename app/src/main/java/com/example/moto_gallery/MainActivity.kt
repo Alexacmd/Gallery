@@ -33,6 +33,7 @@ import androidx.compose.material3.Button
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
@@ -43,8 +44,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import coil3.compose.AsyncImage
-import org.jetbrains.annotations.Async
+
+
+import android.graphics.Bitmap
+import android.os.Build
+import android.util.Size
+import androidx.compose.foundation.Image
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.asImageBitmap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -90,7 +100,14 @@ fun MotoGalleryApp(modifier: Modifier = Modifier) {
 
     LaunchedEffect(hasPermission) {
         if(hasPermission) {
+            val startTime = System.currentTimeMillis()
+
             mediaItems = loadMedia(context.contentResolver)
+
+            val loadTime = System.currentTimeMillis() - startTime
+
+            println("MotoGallery: loaded ${mediaItems.size} items in ${loadTime} ms")
+
         }
     }
 
@@ -116,36 +133,77 @@ fun MotoGalleryApp(modifier: Modifier = Modifier) {
 
         LazyVerticalGrid(
             columns = GridCells.Adaptive(100.dp),
-            modifier = modifier.fillMaxSize()
+            modifier = modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            items(mediaItems) { mediaItem ->
+            items(
+                items = mediaItems,
+                key = { mediaItems ->
+                    mediaItems.uri.toString()
+                }
+            ) { mediaItem ->
                 PhotoItem(mediaItem,
                     onClick = {
                         println("Tapped: ${mediaItem.uri}")
-                    })
+                    }
+                )
             }
         }
     }
 }
 
 @Composable
-fun PhotoItem(mediaItem: MediaItem, onClick: () -> Unit) {
+fun PhotoItem(
+    mediaItem: MediaItem,
+    onClick: () -> Unit
+) {
+    val context = LocalContext.current
+
+    // Load the thumbnail away from the main UI thread.
+    val thumbnail by produceState<Bitmap?>(
+        initialValue = null,
+        key1 = mediaItem.uri
+    ) {
+        value = withContext(Dispatchers.IO) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                try {
+                    // Ask Android for a thumbnail instead of decoding the
+                    // original full-resolution media file.
+                    context.contentResolver.loadThumbnail(
+                        mediaItem.uri,
+                        Size(300, 300),
+                        null
+                    )
+                } catch (e: Exception) {
+                    null
+                }
+            } else {
+                null
+            }
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(1f)
-            .padding(2.dp)
             .clickable {
                 onClick()
             }
     ) {
-        AsyncImage(
-            model = mediaItem.uri,
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
-        )
 
+        if (thumbnail != null) {
+            // Display the already-decoded small thumbnail.
+            Image(
+                bitmap = thumbnail!!.asImageBitmap(),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        }
+
+        // Show a play indicator for videos.
         if (mediaItem.type == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO) {
             Box(
                 modifier = Modifier
@@ -155,7 +213,6 @@ fun PhotoItem(mediaItem: MediaItem, onClick: () -> Unit) {
                         shape = CircleShape
                     )
                     .padding(12.dp)
-
             ) {
                 Text(
                     text = "▶",
@@ -165,37 +222,3 @@ fun PhotoItem(mediaItem: MediaItem, onClick: () -> Unit) {
         }
     }
 }
-
-//@Composable
-//fun PhotoItem(
-//    mediaItem: MediaItem,
-//    onClick: () -> Unit
-//) {
-//    Box(
-//        modifier = Modifier
-//            .fillMaxWidth()
-//            .aspectRatio(1f)
-//            .padding(2.dp)
-//            .clickable {
-//                // Report that this item was tapped.
-//                onClick()
-//            }
-//    ) {
-//        AsyncImage(
-//            model = mediaItem.uri,
-//            contentDescription = null,
-//            modifier = Modifier.fillMaxSize(),
-//            contentScale = ContentScale.Crop
-//        )
-//
-//        // Show the actual MediaStore type value on every item.
-//        Text(
-//            text = mediaItem.type.toString(),
-//            color = Color.White,
-//            modifier = Modifier
-//                .align(Alignment.BottomStart)
-//                .background(Color.Black.copy(alpha = 0.8f))
-//                .padding(4.dp)
-//        )
-//    }
-//}

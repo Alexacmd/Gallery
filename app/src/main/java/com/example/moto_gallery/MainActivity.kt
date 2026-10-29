@@ -29,6 +29,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import android.provider.MediaStore
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
+import androidx.compose.foundation.layout.size
 
 import android.net.Uri
 import androidx.compose.foundation.background
@@ -44,14 +45,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-
+import androidx.compose.material3.Icon
 
 import android.graphics.Bitmap
 import android.os.Build
 import android.util.Size
 import androidx.compose.foundation.Image
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -205,20 +210,14 @@ fun PhotoItem(
 
         // Show a play indicator for videos.
         if (mediaItem.type == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO) {
-            Box(
+            Icon(
+                painter = painterResource(R.drawable.ic_play_circle),
+                contentDescription = "Play",
+                tint = Color.LightGray.copy(alpha = 0.65f),
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .background(
-                        color = Color.Black.copy(alpha = 0.65f),
-                        shape = CircleShape
-                    )
-                    .padding(12.dp)
-            ) {
-                Text(
-                    text = "▶",
-                    color = Color.White
-                )
-            }
+                    .size(24.dp)
+            )
         }
     }
 }

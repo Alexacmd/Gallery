@@ -176,7 +176,7 @@ fun PhotoItem(
         }
         else {
             // If Cache MISS(ThumbnaiCache.kt) load it off the main thread
-            value = withContext(Dispatchers.IO) {
+            value = withContext(ThumbnailLoader.dispatcher) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     try {
                         // Ask Android for a thumbnail instead of decoding the

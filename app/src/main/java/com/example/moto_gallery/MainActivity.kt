@@ -27,12 +27,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 
 import android.provider.MediaStore
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.foundation.layout.size
 
 import android.net.Uri
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -50,9 +48,8 @@ import androidx.compose.material3.Icon
 import android.graphics.Bitmap
 import android.os.Build
 import android.util.Size
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.Image
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.painterResource
@@ -76,6 +73,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
 
 @Composable
 fun MotoGalleryApp(modifier: Modifier = Modifier) {
@@ -170,21 +168,44 @@ fun PhotoItem(
         initialValue = null,
         key1 = mediaItem.uri
     ) {
-        value = withContext(Dispatchers.IO) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                try {
-                    // Ask Android for a thumbnail instead of decoding the
-                    // original full-resolution media file.
-                    context.contentResolver.loadThumbnail(
-                        mediaItem.uri,
-                        Size(300, 300),
+        // Checking if the image is alr saved in the RAM
+        val cachedBitmap = ThumbnailCache.get(mediaItem.uri)
+
+        if (cachedBitmap != null) {
+            value = cachedBitmap
+        }
+        else {
+            // If Cache MISS(ThumbnaiCache.kt) load it off the main thread
+            value = withContext(Dispatchers.IO) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    try {
+                        // Ask Android for a thumbnail instead of decoding the
+                        // original full-resolution media file.
+                        val startTime = System.currentTimeMillis()
+
+                        val bitmap = context.contentResolver.loadThumbnail(
+                            mediaItem.uri,
+                            Size(200, 200),
+                            null
+                        )
+
+                        val loadTime = System.currentTimeMillis() - startTime
+                        println("Thumbnail: ${loadTime} ms")
+
+                        if (bitmap != null) {
+                            ThumbnailCache.put(
+                                mediaItem.uri,
+                                bitmap
+                            )
+                        }
+
+                        bitmap
+                    } catch (e: Exception) {
                         null
-                    )
-                } catch (e: Exception) {
+                    }
+                } else {
                     null
                 }
-            } else {
-                null
             }
         }
     }

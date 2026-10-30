@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.moto_gallery.ui.theme.Moto_GalleryTheme
 import androidx.compose.foundation.layout.Column
+import androidx.compose.runtime.mutableIntStateOf
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -42,7 +43,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.material3.Icon
-
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -94,6 +94,14 @@ fun MotoGalleryApp(modifier: Modifier = Modifier) {
         mutableStateOf<List<MediaItem>>(emptyList())
     }
 
+    var selectedMedia by remember {
+        mutableStateOf<MediaItem?>(null)
+    }
+
+    var selectedIndex by remember {
+        mutableIntStateOf(0)
+    }
+
     LaunchedEffect(hasPermission) {
         if(hasPermission) {
             val startTime = System.currentTimeMillis()
@@ -107,25 +115,28 @@ fun MotoGalleryApp(modifier: Modifier = Modifier) {
         }
     }
 
-    Column(
-        modifier = modifier.fillMaxSize()
-    ) {
-        if (hasPermission) {
-            Text("Permission granted")
-        } else {
-            Button(
-                onClick = {
-                    permissionLauncher.launch(
-                        arrayOf(
-                            Manifest.permission.READ_MEDIA_IMAGES,
-                            Manifest.permission.READ_MEDIA_VIDEO
+    if (selectedMedia == null) {
+
+        Column(
+            modifier = modifier.fillMaxSize()
+        ) {
+            if (hasPermission) {
+                Text("Permission granted")
+            } else {
+                Button(
+                    onClick = {
+                        permissionLauncher.launch(
+                            arrayOf(
+                                Manifest.permission.READ_MEDIA_IMAGES,
+                                Manifest.permission.READ_MEDIA_VIDEO
+                            )
                         )
-                    )
+                    }
+                ) {
+                    Text("Allow access to photos")
                 }
-            ) {
-                Text("Allow access to photos")
             }
-        }
+
 
         val gridState = rememberLazyGridState()
 
@@ -154,23 +165,36 @@ fun MotoGalleryApp(modifier: Modifier = Modifier) {
         LazyVerticalGrid(
             columns = GridCells.Adaptive(100.dp),
             state = gridState,
-            modifier = modifier.fillMaxSize(),
+            modifier = modifier.weight(1f),
             horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             items(
-                items = mediaItems,
-                key = { mediaItems ->
-                    mediaItems.uri.toString()
+                count = mediaItems.size,
+                key = { index ->
+                    mediaItems[index].uri.toString()
                 }
-            ) { mediaItem ->
-                PhotoItem(mediaItem,
+            ) { index ->
+
+                val mediaItem = mediaItems[index]
+
+                PhotoItem(mediaItem = mediaItem,
                     onClick = {
-                        println("Tapped: ${mediaItem.uri}")
+                        selectedIndex = index
+                        selectedMedia = mediaItem
                     }
                 )
             }
         }
+    }
+} else {
+    FullScreenViewer(
+        initialIndex = selectedIndex,
+        mediaItems = mediaItems,
+        onBack = {
+            selectedMedia = null
+            }
+        )
     }
 }
 

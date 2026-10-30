@@ -40,7 +40,7 @@ fun loadMedia(contentResolver: ContentResolver): List<MediaItem> {
             val id = cursor.getLong(idColumn)
             val mediaType = cursor.getInt(typeColumn)
             val contentUri = Uri.withAppendedPath(collection, id.toString())
-            println("Media: uri=$contentUri type=$mediaType")
+            //println("Media: uri=$contentUri type=$mediaType")
             mediaList.add(
                 MediaItem(
                     uri = contentUri,

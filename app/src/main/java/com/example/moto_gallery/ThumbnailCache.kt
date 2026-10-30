@@ -20,16 +20,19 @@ object ThumbnailCache{
     }
 
     fun get(uri: Uri): Bitmap? {
-        val bitmap = cache.get(uri.toString())
-
-        if (bitmap != null){
-            println("Thumbnail:HIT")
-        } else{
-            println("Thumbnail:MISS")
-        }
-
-        return bitmap
+        return cache.get(uri.toString())
     }
+//        :Debug layer:
+//        val bitmap = cache.get(uri.toString())
+//
+//        if (bitmap != null){
+//            println("Thumbnail:HIT")
+//        } else{
+//            println("Thumbnail:MISS")
+//        }
+//
+//        return bitmap
+//    }
 
     fun put(uri: Uri, bitmap: Bitmap){
         cache.put(uri.toString(), bitmap)

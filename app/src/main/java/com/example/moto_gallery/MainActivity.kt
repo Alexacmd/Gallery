@@ -30,7 +30,6 @@ import android.provider.MediaStore
 import androidx.compose.material3.Button
 import androidx.compose.foundation.layout.size
 
-import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -41,22 +40,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.material3.Icon
 
 import android.graphics.Bitmap
-import android.os.Build
-import android.util.Size
-import androidx.annotation.RequiresApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -109,7 +102,7 @@ fun MotoGalleryApp(modifier: Modifier = Modifier) {
 
             val loadTime = System.currentTimeMillis() - startTime
 
-            println("MotoGallery: loaded ${mediaItems.size} items in ${loadTime} ms")
+            println("MotoGallery: loaded ${mediaItems.size} items in $loadTime ms")
 
         }
     }
@@ -134,8 +127,33 @@ fun MotoGalleryApp(modifier: Modifier = Modifier) {
             }
         }
 
+        val gridState = rememberLazyGridState()
+
+        LaunchedEffect(gridState, mediaItems) {
+
+            snapshotFlow {
+                gridState.firstVisibleItemIndex
+            }.collect { firstVisibleIndex ->
+
+                val prefetchStart = firstVisibleIndex + 12
+
+                val prefetchEnd = minOf(
+                    prefetchStart + 12,
+                    mediaItems.size
+                )
+
+                for (index in prefetchStart until prefetchEnd) {
+                    ThumbnailLoader.load(
+                        context.contentResolver,
+                        mediaItems[index]
+                    )
+                }
+            }
+        }
+
         LazyVerticalGrid(
             columns = GridCells.Adaptive(100.dp),
+            state = gridState,
             modifier = modifier.fillMaxSize(),
             horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -168,46 +186,12 @@ fun PhotoItem(
         initialValue = null,
         key1 = mediaItem.uri
     ) {
-        // Checking if the image is alr saved in the RAM
-        val cachedBitmap = ThumbnailCache.get(mediaItem.uri)
 
-        if (cachedBitmap != null) {
-            value = cachedBitmap
-        }
-        else {
-            // If Cache MISS(ThumbnaiCache.kt) load it off the main thread
-            value = withContext(ThumbnailLoader.dispatcher) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    try {
-                        // Ask Android for a thumbnail instead of decoding the
-                        // original full-resolution media file.
-                        val startTime = System.currentTimeMillis()
+        value = ThumbnailLoader.load(
+            context.contentResolver,
+            mediaItem
+        )
 
-                        val bitmap = context.contentResolver.loadThumbnail(
-                            mediaItem.uri,
-                            Size(200, 200),
-                            null
-                        )
-
-                        val loadTime = System.currentTimeMillis() - startTime
-                        println("Thumbnail: ${loadTime} ms")
-
-                        if (bitmap != null) {
-                            ThumbnailCache.put(
-                                mediaItem.uri,
-                                bitmap
-                            )
-                        }
-
-                        bitmap
-                    } catch (e: Exception) {
-                        null
-                    }
-                } else {
-                    null
-                }
-            }
-        }
     }
 
     Box(

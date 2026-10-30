@@ -6,9 +6,20 @@ import android.util.LruCache
 
 object ThumbnailCache{
 
-    private val cache = LruCache<String, Bitmap>(100)
+    // Max amount of memory this cache is allowed to use
+    private val maxMemoryKb = (Runtime.getRuntime().maxMemory() / 1024).toInt()
 
-    fun get(uri: Uri): Bitmap?{
+    private val cacheSizeKb = maxMemoryKb / 8
+
+    // Cache entries are now measured by their memory instead of the count which was set as 100 before
+    private val cache = object: LruCache<String, Bitmap>(cacheSizeKb) {
+
+        override fun sizeOf(key: String, bitmap: Bitmap): Int {
+            return bitmap.allocationByteCount / 1024
+        }
+    }
+
+    fun get(uri: Uri): Bitmap? {
         val bitmap = cache.get(uri.toString())
 
         if (bitmap != null){
@@ -18,7 +29,6 @@ object ThumbnailCache{
         }
 
         return bitmap
-//      return cache.get(uri.toString())
     }
 
     fun put(uri: Uri, bitmap: Bitmap){

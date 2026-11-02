@@ -11,7 +11,7 @@ composeBom = "2026.02.01"
 materialIcons = "1.7.8"
 
 # 3. Third-Party & Media
-coil = "3.6.3"
+coil = "3.3.0"
 media3UiVersion = "1.11.1"
 
 # 4. Testing

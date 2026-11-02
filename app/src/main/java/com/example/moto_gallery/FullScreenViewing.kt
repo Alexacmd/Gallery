@@ -2,7 +2,10 @@ package com.example.moto_gallery
 
 import android.graphics.Bitmap
 import android.os.Build
+import android.provider.MediaStore
 import android.util.Size
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
@@ -20,6 +23,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 
 @Composable
 fun FullScreenViewer(
@@ -32,7 +39,7 @@ fun FullScreenViewer(
         pageCount = { mediaItems.size }
     )
 
-    BackHandler() {
+    BackHandler {
         onBack()
     }
 
@@ -54,6 +61,20 @@ fun FullScreenViewer(
 fun MediaViewerItem(
     mediaItem: MediaItem
 ) {
+    if (mediaItem.type == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO) {
+
+        VideoPlayer(mediaItem = mediaItem)
+
+    } else {
+
+        ImageViewer(mediaItem = mediaItem)
+    }
+}
+
+@Composable
+fun ImageViewer(
+    mediaItem: com.example.moto_gallery.MediaItem
+) {
     val context = LocalContext.current
 
     val bitmap by produceState<Bitmap?>(
@@ -69,7 +90,7 @@ fun MediaViewerItem(
                         Size(1080, 1080),
                         null
                     )
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     null
                 }
             }
@@ -91,6 +112,57 @@ fun MediaViewerItem(
                 text = "Loading...",
                 modifier = Modifier.align(Alignment.Center)
             )
+        }
+    }
+}
+
+@Composable
+fun VideoPlayer(
+    mediaItem: com.example.moto_gallery.MediaItem
+) {
+
+    val context = LocalContext.current
+
+    val player = androidx.compose.runtime.remember(mediaItem.uri) {
+        ExoPlayer.Builder(context).build().apply {
+
+            setMediaItem(
+                androidx.media3.common.MediaItem.Builder()
+                    .setUri(mediaItem.uri)
+                    .build()
+            )
+
+            prepare()
+
+            playWhenReady = true
+        }
+    }
+
+    AndroidView(
+        factory = { context ->
+
+            PlayerView(context).apply {
+
+                this.player = player
+
+                useController = true
+
+                setBackgroundColor(android.graphics.Color.BLACK)
+
+                layoutParams = FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+            }
+        },
+
+        modifier = Modifier.fillMaxSize()
+    )
+
+    DisposableEffect(player) {
+
+        onDispose {
+            player.release()
         }
     }
 }

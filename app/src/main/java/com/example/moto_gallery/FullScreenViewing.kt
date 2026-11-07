@@ -7,8 +7,6 @@ import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.pager.HorizontalPager
@@ -17,7 +15,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -25,12 +22,23 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
-
+import coil3.compose.AsyncImage
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.isSpecified
+import androidx.compose.ui.input.pointer.positionChanged
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 @Composable
 fun FullScreenViewer(
     mediaItems: List<MediaItem>,
@@ -42,147 +50,153 @@ fun FullScreenViewer(
         pageCount = { mediaItems.size }
     )
 
-    var imageIsZoomed by remember { mutableStateOf(false) }
-
-    androidx.compose.runtime.LaunchedEffect(pagerState.currentPage) {
-        imageIsZoomed = false
-    }
-
-    BackHandler {
-        onBack()
-    }
+    BackHandler { onBack() }
 
     HorizontalPager(
         state = pagerState,
-        userScrollEnabled = !imageIsZoomed,
         modifier = Modifier.fillMaxSize()
     ) { page ->
-        val mediaItem = mediaItems[page]
-
-        MediaViewerItem(
-            mediaItem = mediaItem,
-            onZoomChanged = { zoomed ->
-                if (page == pagerState.currentPage) {
-                    imageIsZoomed = zoomed
-                }
-            }
-        )
+        MediaViewerItem(mediaItem = mediaItems[page])
     }
 }
+
 @Composable
-fun MediaViewerItem(
-    mediaItem: MediaItem,
-    onZoomChanged: (Boolean) -> Unit
-) {
+fun MediaViewerItem(mediaItem: MediaItem) {
     if (mediaItem.type == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO) {
-
-        VideoPlayer(
-            mediaItem = mediaItem
-        )
-
+        VideoPlayer(mediaItem = mediaItem)
     } else {
-
-        ImageViewer(
-            mediaItem = mediaItem,
-            onZoomChanged = onZoomChanged
-        )
+        ImageViewer(mediaItem = mediaItem)
     }
 }
 
 @Composable
-fun ImageViewer(
-    mediaItem: MediaItem,
-    onZoomChanged: (Boolean) -> Unit
-) {
-    var scale by remember(mediaItem.uri) {
-        mutableFloatStateOf(1f)
-    }
+fun ImageViewer(mediaItem: MediaItem) {
+    var scale by remember(mediaItem.uri) { mutableFloatStateOf(1f) }
+    var offsetX by remember(mediaItem.uri) { mutableFloatStateOf(0f) }
+    var offsetY by remember(mediaItem.uri) { mutableFloatStateOf(0f) }
 
-    var offsetX by remember(mediaItem.uri) {
-        mutableFloatStateOf(0f)
-    }
+    var boxWidth by remember { mutableFloatStateOf(0f) }
+    var boxHeight by remember { mutableFloatStateOf(0f) }
 
-    var offsetY by remember(mediaItem.uri) {
-        mutableFloatStateOf(0f)
-    }
+    // Intrinsic size of the loaded image (0 until loaded)
+    var imageW by remember(mediaItem.uri) { mutableFloatStateOf(0f) }
+    var imageH by remember(mediaItem.uri) { mutableFloatStateOf(0f) }
 
-    val transformState = rememberTransformableState {
-            zoomChange, panChange, _ ->
-
-        val newScale =
-            (scale * zoomChange).coerceIn(1f, 5f)
-
-        scale = newScale
-
-        if (scale > 1f) {
-
-            offsetX += panChange.x
-            offsetY += panChange.y
-
-        } else {
-            offsetX = 0f
-            offsetY = 0f
+    // Size of the image as actually drawn with ContentScale.Fit (at scale 1)
+    fun fittedSize(): Pair<Float, Float> {
+        if (imageW <= 0f || imageH <= 0f || boxWidth <= 0f || boxHeight <= 0f) {
+            return Pair(boxWidth, boxHeight)
         }
-        onZoomChanged(scale > 1f)
+        val ratio = min(boxWidth / imageW, boxHeight / imageH)
+        return Pair(imageW * ratio, imageH * ratio)
+    }
+
+    fun maxOffsets(s: Float): Pair<Float, Float> {
+        val (fw, fh) = fittedSize()
+        val maxX = max(0f, (fw * s - boxWidth) / 2f)
+        val maxY = max(0f, (fh * s - boxHeight) / 2f)
+        return Pair(maxX, maxY)
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
+            .onSizeChanged {
+                boxWidth = it.width.toFloat()
+                boxHeight = it.height.toFloat()
+            }
 
-            .transformable(
-                state = transformState,
-                enabled = scale > 1f
-            )
             .pointerInput(mediaItem.uri) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    do {
+                        val event = awaitPointerEvent()
+                        val alreadyConsumed = event.changes.any { it.isConsumed }
+                        if (!alreadyConsumed) {
+                            val pointers = event.changes.count { it.pressed }
+                            val zoom = event.calculateZoom()
+                            val pan = event.calculatePan()
 
+                            if (pointers >= 2) {
+                                val oldScale = scale
+                                val newScale = (oldScale * zoom).coerceIn(1f, 5f)
+                                val centroid = event.changes
+                                    .filter { it.pressed }
+                                    .map { it.position }
+                                    .let { pts ->
+                                        Offset(
+                                            pts.sumOf { it.x.toDouble() }.toFloat() / pts.size,
+                                            pts.sumOf { it.y.toDouble() }.toFloat() / pts.size
+                                        )
+                                    }
+                                val cx = centroid.x - boxWidth / 2f
+                                val cy = centroid.y - boxHeight / 2f
+                                val factor = newScale / oldScale
+
+                                // Keep the point under the fingers fixed, then apply pan
+                                val rawX = cx - (cx - offsetX) * factor + pan.x
+                                val rawY = cy - (cy - offsetY) * factor + pan.y
+
+                                scale = newScale
+                                val (maxX, maxY) = maxOffsets(newScale)
+                                offsetX = rawX.coerceIn(-maxX, maxX)
+                                offsetY = rawY.coerceIn(-maxY, maxY)
+
+                                event.changes.forEach { if (it.positionChanged()) it.consume() }
+                            } else if (scale > 1f) {
+                                // One finger while zoomed: pan, but let the pager have it at edges
+                                val (maxX, maxY) = maxOffsets(scale)
+                                val newX = (offsetX + pan.x).coerceIn(-maxX, maxX)
+                                val newY = (offsetY + pan.y).coerceIn(-maxY, maxY)
+
+                                val movedX = newX != offsetX
+                                val movedY = newY != offsetY && abs(pan.y) > abs(pan.x)
+
+                                offsetX = newX
+                                offsetY = newY
+
+                                if (movedX || movedY) {
+                                    event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                }
+                            }
+                        }
+                    } while (!alreadyConsumed && event.changes.any { it.pressed })
+                }
+            }
+            .pointerInput(mediaItem.uri) {
                 detectTapGestures(
                     onDoubleTap = {
-
                         if (scale == 1f) {
-
-                            // Zoom into the image
                             scale = 2.5f
-
-                            offsetX = 0f
-                            offsetY = 0f
-
-                            onZoomChanged(true)
-
                         } else {
-
-                            // Return to normal size
                             scale = 1f
-
-                            offsetX = 0f
-                            offsetY = 0f
-
-                            onZoomChanged(false)
                         }
+                        offsetX = 0f
+                        offsetY = 0f
                     }
                 )
             }
     ) {
-        coil3.compose.AsyncImage(
+        AsyncImage(
             model = mediaItem.uri,
-
             contentDescription = null,
-
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
-
-                    // Apply the current zoom
                     scaleX = scale
                     scaleY = scale
-
-                    // Panning
                     translationX = offsetX
                     translationY = offsetY
                 },
-
-            contentScale = ContentScale.Fit
+            contentScale = ContentScale.Fit,
+            onSuccess = { state ->
+                val size = state.painter.intrinsicSize
+                if (size.isSpecified) {
+                    imageW = size.width
+                    imageH = size.height
+                }
+            }
         )
     }
 }

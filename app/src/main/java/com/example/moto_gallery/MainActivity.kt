@@ -50,7 +50,11 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.painterResource
-
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -106,7 +110,7 @@ fun MotoGalleryApp(modifier: Modifier = Modifier) {
         if(hasPermission) {
             val startTime = System.currentTimeMillis()
 
-            mediaItems = loadMedia(context.contentResolver)
+            mediaItems = withContext(Dispatchers.IO) { loadMedia(context.contentResolver) }
 
             val loadTime = System.currentTimeMillis() - startTime
 
@@ -144,20 +148,23 @@ fun MotoGalleryApp(modifier: Modifier = Modifier) {
 
             snapshotFlow {
                 gridState.firstVisibleItemIndex
-            }.collect { firstVisibleIndex ->
+            }.collectLatest { first ->
 
-                val prefetchStart = firstVisibleIndex + 12
+                val start = first + 12
 
-                val prefetchEnd = minOf(
-                    prefetchStart + 12,
+                val end  = minOf(
+                    start + 12,
                     mediaItems.size
                 )
+                if (start >= end)
+                    return@collectLatest
+                coroutineScope {
 
-                for (index in prefetchStart until prefetchEnd) {
-                    ThumbnailLoader.load(
-                        context.contentResolver,
-                        mediaItems[index]
-                    )
+                    for (i in start until end) {
+                        launch {
+                            ThumbnailLoader.load(context.contentResolver, mediaItems[i])
+                        }
+                    }
                 }
             }
         }
@@ -171,8 +178,8 @@ fun MotoGalleryApp(modifier: Modifier = Modifier) {
         ) {
             items(
                 count = mediaItems.size,
-                key = { index ->
-                    mediaItems[index].uri.toString()
+                key = {
+                    mediaItems[it].id
                 }
             ) { index ->
 
@@ -207,37 +214,33 @@ fun PhotoItem(
 
     // Load the thumbnail away from the main UI thread.
     val thumbnail by produceState<Bitmap?>(
-        initialValue = null,
+        initialValue = ThumbnailCache.get(mediaItem.uri),
         key1 = mediaItem.uri
     ) {
 
-        value = ThumbnailLoader.load(
-            context.contentResolver,
-            mediaItem
-        )
+        if (value == null) {
+            value = ThumbnailLoader.load(context.contentResolver, mediaItem)
+        }
 
     }
+
+    val imageBitmap = remember (thumbnail) { thumbnail?.asImageBitmap() }
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(1f)
-            .clickable {
-                onClick()
-            }
+            .clickable(onClick = onClick)
     ) {
-
-        if (thumbnail != null) {
-            // Display the already-decoded small thumbnail.
+        imageBitmap?.let {
             Image(
-                bitmap = thumbnail!!.asImageBitmap(),
+                bitmap = it,
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
         }
 
-        // Show a play indicator for videos.
         if (mediaItem.type == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO) {
             Icon(
                 painter = painterResource(R.drawable.ic_play_circle),

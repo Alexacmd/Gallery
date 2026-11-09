@@ -3,9 +3,12 @@ package com.example.moto_gallery
 import android.content.ContentResolver
 import android.graphics.Bitmap
 import android.os.Build
+import android.os.CancellationSignal
 import android.util.Size
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 
 object ThumbnailLoader {
 
@@ -32,29 +35,21 @@ object ThumbnailLoader {
         // Generate thumbnail away from the main thread
         return withContext(dispatcher) {
 
+            ThumbnailCache.get(mediaItem.uri)?.let { return@withContext it }
+
+            val signal = CancellationSignal()
+            val handle = coroutineContext[Job]!!.invokeOnCompletion { cause ->
+                if (cause is CancellationException) signal.cancel()
+            }
             try {
-
-                val startTime = System.currentTimeMillis()
-
-                //Ask Android for a thumbnail instead of decoding the original full-resolution media file.
-                val bitmap = contentResolver.loadThumbnail(
-                    mediaItem.uri,
-                    Size(200,200),
-                    null
-                )
-
-                val loadTime = System.currentTimeMillis() - startTime
-                println("Thumbnail $loadTime ms")
-
-                //Save thumbnail in ram for future use
-                ThumbnailCache.put(
-                    mediaItem.uri,
-                    bitmap
-                )
-                bitmap
-
+                contentResolver.loadThumbnail(mediaItem.uri, Size(320,320), signal)
+                    .also { ThumbnailCache.put(mediaItem.uri, it) }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 null
+            } finally {
+                handle.dispose()
             }
         }
     }

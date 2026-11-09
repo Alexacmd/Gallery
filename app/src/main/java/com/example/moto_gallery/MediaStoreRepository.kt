@@ -1,9 +1,14 @@
 package com.example.moto_gallery
 
 import android.content.ContentResolver
+import android.content.ContentUris
 import android.provider.MediaStore
 import android.net.Uri
+import androidx.compose.runtime.Immutable
+
+@Immutable
 data class MediaItem(
+    val id: Long,
     val uri: Uri,
     val type: Int
 )
@@ -39,10 +44,18 @@ fun loadMedia(contentResolver: ContentResolver): List<MediaItem> {
         while(cursor.moveToNext()) {
             val id = cursor.getLong(idColumn)
             val mediaType = cursor.getInt(typeColumn)
-            val contentUri = Uri.withAppendedPath(collection, id.toString())
-            //println("Media: uri=$contentUri type=$mediaType")
+
+            val baseUri = if (mediaType == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO) {
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            } else {
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            }
+
+            val contentUri = ContentUris.withAppendedId(baseUri, id)
+
             mediaList.add(
                 MediaItem(
+                    id = id,
                     uri = contentUri,
                     type = mediaType
                 )
